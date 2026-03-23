@@ -4,27 +4,33 @@ const cors = require("cors");
 const crypto = require("crypto");
 const admin = require("firebase-admin");
 
-const app = express(); // ✅ FIRST define app
+const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// 🔥 Firebase setup
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+// 🔥 Firebase Setup (SAFE)
+let db;
+try {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
 
-const db = admin.firestore();
+  db = admin.firestore();
+  console.log("🔥 Firebase initialized SUCCESS");
+} catch (err) {
+  console.error("🔥 Firebase INIT ERROR:", err);
+}
 
-// 🔐 Razorpay
+// 🔐 Razorpay Setup
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
-// ✅ Test
+// ✅ Test route
 app.get("/", (req, res) => {
   res.send("Backend running ✅");
 });
@@ -41,12 +47,12 @@ app.post("/create-order", async (req, res) => {
 
     res.json(order);
   } catch (err) {
-    console.error(err);
+    console.error("Order Error:", err);
     res.status(500).json({ error: "Order failed" });
   }
 });
 
-// ✅ VERIFY PAYMENT
+// ✅ VERIFY PAYMENT + SAVE FULL DATA
 app.post("/verify-payment", async (req, res) => {
   try {
     const {
@@ -54,11 +60,20 @@ app.post("/verify-payment", async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
       userId,
+      name,
+      email,
+      contact,
       packageName,
+      amount,
     } = req.body;
 
-    console.log("VERIFY BODY:", req.body);
+    console.log("🔍 VERIFY BODY:", req.body);
 
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ success: false, message: "Missing data" });
+    }
+
+    // 🔐 Signature verify
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 
     const expectedSignature = crypto
@@ -66,38 +81,64 @@ app.post("/verify-payment", async (req, res) => {
       .update(body)
       .digest("hex");
 
+    console.log("EXPECTED:", expectedSignature);
+    console.log("RECEIVED:", razorpay_signature);
+
     if (expectedSignature === razorpay_signature) {
 
-      console.log("Payment Verified ✅");
+      console.log("✅ Payment Verified");
 
-      // 🔥 SAVE PAYMENT
-      await db.collection("payments").add({
-        userId,
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
-        package: packageName,
-        status: "success",
-        createdAt: new Date(),
+      const createdAt = new Date();
+      const renewalDate = new Date(createdAt);
+      renewalDate.setDate(renewalDate.getDate() + 30);
+
+      // 🔥 SAVE FULL PAYMENT DATA
+      try {
+        await db.collection("payments").add({
+          userId,
+          name,
+          email,
+          contact,
+          paymentId: razorpay_payment_id,
+          orderId: razorpay_order_id,
+          package: packageName,
+          amount,
+          status: "success",
+          createdAt,
+          renewalDate,
+        });
+
+        console.log("🔥 Payment saved in Firebase");
+      } catch (err) {
+        console.error("🔥 Firebase Save Error:", err);
+        return res.status(500).json({ success: false });
+      }
+
+      // 🔥 UPDATE USER SUBSCRIPTION
+      try {
+        await db.collection("users").doc(userId).set({
+          package: packageName,
+          status: "active",
+          renewalDate,
+        }, { merge: true });
+
+        console.log("🔥 User updated");
+      } catch (err) {
+        console.error("🔥 User Update Error:", err);
+      }
+
+      return res.json({
+        success: true,
+        message: "Payment verified & package activated",
       });
 
-      console.log("🔥 Payment saved");
-
-      // 🔥 UPDATE USER
-      await db.collection("users").doc(userId).set({
-        package: packageName,
-        status: "active",
-      }, { merge: true });
-
-      console.log("🔥 User updated");
-
-      return res.json({ success: true });
-
     } else {
+      console.log("❌ Signature mismatch");
       return res.status(400).json({ success: false });
     }
 
   } catch (err) {
-    console.error("🔥 ERROR:", err);
+    console.error("🔥 Verification Error:", err);
     res.status(500).json({ error: "Verification failed" });
   }
 });
@@ -106,5 +147,5 @@ app.post("/verify-payment", async (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
