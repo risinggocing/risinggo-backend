@@ -3,7 +3,7 @@ const Razorpay = require("razorpay");
 const cors = require("cors");
 const crypto = require("crypto");
 
-const app = express();
+const app = express(); // ✅ FIRST define app
 
 app.use(cors());
 app.use(express.json());
@@ -19,30 +19,22 @@ app.get("/", (req, res) => {
   res.send("Backend running ✅");
 });
 
-
 // ✅ CREATE ORDER
 app.post("/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
 
-    if (!amount) {
-      return res.status(400).json({ error: "Amount is required" });
-    }
-
     const order = await razorpay.orders.create({
       amount: amount * 100,
       currency: "INR",
-      receipt: "receipt_" + Date.now(),
     });
 
     res.json(order);
-
   } catch (err) {
-    console.error("Order Error:", err);
-    res.status(500).json({ error: "Order creation failed" });
+    console.error(err);
+    res.status(500).json({ error: "Order failed" });
   }
 });
-
 
 // ✅ VERIFY PAYMENT
 app.post("/verify-payment", (req, res) => {
@@ -55,7 +47,6 @@ app.post("/verify-payment", (req, res) => {
 
     console.log("VERIFY BODY:", req.body);
 
-    // ❌ Missing data check
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: "Missing data" });
     }
@@ -72,31 +63,17 @@ app.post("/verify-payment", (req, res) => {
 
     if (expectedSignature === razorpay_signature) {
       console.log("Payment Verified ✅");
-
-      return res.json({
-        success: true,
-        message: "Payment verified successfully",
-      });
-
+      res.json({ success: true });
     } else {
-      console.error("Signature Mismatch ❌");
-
-      return res.status(400).json({
-        success: false,
-        message: "Invalid signature (fake payment)",
-      });
+      console.log("Signature Mismatch ❌");
+      res.status(400).json({ success: false });
     }
 
   } catch (err) {
     console.error("Verification Error:", err);
-
-    res.status(500).json({
-      success: false,
-      error: "Verification failed",
-    });
+    res.status(500).json({ error: "Verification failed" });
   }
 });
-
 
 // 🚀 START SERVER
 const PORT = process.env.PORT || 5000;
