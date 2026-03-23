@@ -1,13 +1,50 @@
 const express = require("express");
-const cors = require("cors"); // 👈 1. Import CORS
+const Razorpay = require("razorpay");
+const cors = require("cors");
 const crypto = require("crypto");
+
 const app = express();
 
-app.use(cors()); // 👈 2. Use CORS
-app.use(express.json()); // 👈 3. Use JSON Parser
+app.use(cors());
+app.use(express.json());
 
-// ... your /create-order route ...
+// 🔐 Razorpay instance
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
+// ✅ Test route
+app.get("/", (req, res) => {
+  res.send("Backend running ✅");
+});
+
+
+// ✅ CREATE ORDER
+app.post("/create-order", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: "Amount is required" });
+    }
+
+    const order = await razorpay.orders.create({
+      amount: amount * 100,
+      currency: "INR",
+      receipt: "receipt_" + Date.now(),
+    });
+
+    res.json(order);
+
+  } catch (err) {
+    console.error("Order Error:", err);
+    res.status(500).json({ error: "Order creation failed" });
+  }
+});
+
+
+// ✅ VERIFY PAYMENT
 app.post("/verify-payment", (req, res) => {
   try {
     const {
@@ -16,7 +53,9 @@ app.post("/verify-payment", (req, res) => {
       razorpay_signature,
     } = req.body;
 
-    // Check if data is missing
+    console.log("VERIFY BODY:", req.body);
+
+    // ❌ Missing data check
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: "Missing data" });
     }
@@ -28,17 +67,40 @@ app.post("/verify-payment", (req, res) => {
       .update(body.toString())
       .digest("hex");
 
+    console.log("EXPECTED:", expectedSignature);
+    console.log("RECEIVED:", razorpay_signature);
+
     if (expectedSignature === razorpay_signature) {
       console.log("Payment Verified ✅");
-      res.json({ success: true });
+
+      return res.json({
+        success: true,
+        message: "Payment verified successfully",
+      });
+
     } else {
       console.error("Signature Mismatch ❌");
-      res.status(400).json({ success: false });
+
+      return res.status(400).json({
+        success: false,
+        message: "Invalid signature (fake payment)",
+      });
     }
+
   } catch (err) {
     console.error("Verification Error:", err);
-    res.status(500).json({ error: "Verification failed" });
+
+    res.status(500).json({
+      success: false,
+      error: "Verification failed",
+    });
   }
 });
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+
+// 🚀 START SERVER
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
