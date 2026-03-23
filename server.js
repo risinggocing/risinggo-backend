@@ -1,33 +1,26 @@
-const express = require("express");
-const Razorpay = require("razorpay");
-const cors = require("cors");
+const crypto = require("crypto");
 
-const app = express();
-app.use(express.json());
-app.use(cors());
-
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
-
-app.get("/", (req, res) => {
-  res.send("Backend running ✅");
-});
-
-app.post("/create-order", async (req, res) => {
+app.post("/verify-payment", (req, res) => {
   try {
-    const order = await razorpay.orders.create({
-      amount: req.body.amount * 100,
-      currency: "INR",
-    });
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    } = req.body;
 
-    res.json(order);
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest("hex");
+
+    if (expectedSignature === razorpay_signature) {
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ success: false });
+    }
   } catch (err) {
-    res.status(500).json({ error: "Order failed" });
+    res.status(500).json({ error: "Verification failed" });
   }
-});
-
-app.listen(process.env.PORT || 5000, () => {
-  console.log("Server running");
 });
