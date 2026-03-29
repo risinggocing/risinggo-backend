@@ -15,8 +15,6 @@ let db;
 
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
-
-  // ✅ FIX PRIVATE KEY
   serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
 
   admin.initializeApp({
@@ -39,15 +37,59 @@ const razorpay = new Razorpay({
 });
 
 /* =========================
-📦 PACKAGE CONFIG
+📦 PACKAGE CONFIG (UPDATED)
 ========================= */
 const packageConfig = {
-  "Starter Pack": { type: "one-time", days: 3 },
-  "Super Entry Pack": { type: "one-time", days: 5 },
-  "Ultra Low Entry Pack": { type: "one-time", days: 7 },
-  "Growth Pack": { type: "monthly" },
-  "Pro Pack": { type: "monthly" },
+  "Shopify / WooCommerce Store Setup": { price: 4999, type: "one-time", sac: "998314" },
+  "Product Listing (50 Products)": { price: 2499, type: "one-time", sac: "998314" },
+  "Social Media Shop Setup (FB/IG)": { price: 1999, type: "one-time", sac: "998361" },
+  "E-commerce Marketing (Ads)": { price: 5999, type: "monthly", sac: "998361" },
+  "Branding & Logo Design": { price: 2999, type: "one-time", sac: "998361" },
+  "Dropshipping Setup": { price: 9999, type: "one-time", sac: "998314" },
+  "CRM & Order Management System": { price: 4999, type: "one-time", sac: "998314" },
+
+  "Digital Shop (Entry Pack)": { price: 2999, type: "one-time", sac: "998361" },
+  "E-commerce Starter Pack": { price: 6999, type: "one-time", sac: "998314" },
+  "E-commerce Growth Pack": { price: 14999, type: "one-time", sac: "998314" },
+
+  "Sales Booster": { price: 7999, type: "monthly", sac: "998361" },
+
+  "Google Visibility Pack": { price: 99, type: "one-time", sac: "998361" },
+  "Lead Generation System Pack": { price: 999, type: "one-time", sac: "998312" },
+  "Super Entry Pack": { price: 2999, type: "one-time", sac: "998361" },
+  "Ultra Low Entry Pack": { price: 4999, type: "one-time", sac: "998361" },
+
+  "Visibility Need Package": { price: 19999, type: "monthly", sac: "998361" },
+  "Lead Need Package": { price: 34999, type: "monthly", sac: "998312" },
+  "Sales Need Package": { price: 69999, type: "monthly", sac: "998361" },
+  "Brand Need Package": { price: 109999, type: "monthly", sac: "998361" },
 };
+
+/* =========================
+🧮 GST FUNCTION
+========================= */
+function calculateGST(price, state) {
+  const gstRate = 0.18;
+  const gstAmount = price * gstRate;
+
+  if (state === "Bihar") {
+    return {
+      cgst: gstAmount / 2,
+      sgst: gstAmount / 2,
+      igst: 0,
+      total: price + gstAmount,
+      type: "CGST+SGST",
+    };
+  } else {
+    return {
+      cgst: 0,
+      sgst: 0,
+      igst: gstAmount,
+      total: price + gstAmount,
+      type: "IGST",
+    };
+  }
+}
 
 /* =========================
 🧮 DATE HELPERS
@@ -72,23 +114,39 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-🧾 CREATE ORDER
+🧾 CREATE ORDER (UPDATED)
 ========================= */
 app.post("/create-order", async (req, res) => {
   try {
-    const { amount } = req.body;
+    const { packageName, state } = req.body;
 
-    if (!amount) {
-      return res.status(400).json({ error: "Amount required" });
+    const config = packageConfig[packageName];
+    if (!config) {
+      return res.status(400).json({ error: "Invalid package" });
     }
 
+    const gstData = calculateGST(config.price, state);
+
     const order = await razorpay.orders.create({
-      amount: amount * 100,
+      amount: Math.round(gstData.total * 100),
       currency: "INR",
       receipt: "receipt_" + Date.now(),
+      notes: {
+        package: packageName,
+        sac: config.sac,
+        gst_type: gstData.type,
+        gstin: "10AAPCR4262H1ZF",
+      },
     });
 
-    res.json(order);
+    res.json({
+      order,
+      breakdown: {
+        basePrice: config.price,
+        gst: gstData,
+        total: gstData.total,
+      },
+    });
 
   } catch (err) {
     console.error("❌ Order Error:", err);
@@ -97,7 +155,7 @@ app.post("/create-order", async (req, res) => {
 });
 
 /* =========================
-✅ VERIFY PAYMENT + PACKAGE LOGIC
+✅ VERIFY PAYMENT
 ========================= */
 app.post("/verify-payment", async (req, res) => {
   try {
@@ -114,12 +172,9 @@ app.post("/verify-payment", async (req, res) => {
       email,
       contact,
       packageName,
-      amount,
+      state,
     } = req.body;
 
-    /* =========================
-       🔐 SIGNATURE VERIFY
-    ========================= */
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 
     const expectedSignature = crypto
@@ -131,30 +186,19 @@ app.post("/verify-payment", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid signature" });
     }
 
-    console.log("✅ Payment Verified");
-
-    /* =========================
-       📦 PACKAGE LOGIC
-    ========================= */
     const config = packageConfig[packageName];
-
-    if (!config) {
-      return res.status(400).json({ success: false, message: "Invalid package" });
-    }
+    const gstData = calculateGST(config.price, state);
 
     const purchaseDate = new Date();
     let expiryDate = null;
     let renewalDate = null;
 
     if (config.type === "one-time") {
-      expiryDate = addDays(purchaseDate, config.days);
+      expiryDate = addDays(purchaseDate, 7);
     } else {
       renewalDate = addMonths(purchaseDate, 1);
     }
 
-    /* =========================
-       🔥 SAVE PAYMENT (NO DUPLICATE)
-    ========================= */
     await db.collection("payments").doc(razorpay_payment_id).set({
       userId,
       name,
@@ -163,7 +207,18 @@ app.post("/verify-payment", async (req, res) => {
       paymentId: razorpay_payment_id,
       orderId: razorpay_order_id,
       package: packageName,
-      amount,
+
+      baseAmount: config.price,
+      gstAmount: gstData.cgst + gstData.sgst + gstData.igst,
+      gstType: gstData.type,
+      cgst: gstData.cgst,
+      sgst: gstData.sgst,
+      igst: gstData.igst,
+      totalAmount: gstData.total,
+
+      sacCode: config.sac,
+      gstin: "10AAPCR4262H1ZF",
+
       status: "success",
       purchaseDate,
       expiryDate,
@@ -171,9 +226,6 @@ app.post("/verify-payment", async (req, res) => {
       packageType: config.type,
     });
 
-    /* =========================
-       🔥 UPDATE USER
-    ========================= */
     await db.collection("users").doc(userId).set({
       package: packageName,
       status: "active",
@@ -186,7 +238,7 @@ app.post("/verify-payment", async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Payment verified & package activated",
+      message: "Payment verified & GST stored",
     });
 
   } catch (err) {
