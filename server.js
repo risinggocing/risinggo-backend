@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 /* =========================
-🔥 FIREBASE SETUP
+🔥 FIREBASE
 ========================= */
 let db;
 
@@ -22,14 +22,12 @@ try {
   });
 
   db = admin.firestore();
-  console.log("🔥 Firebase initialized SUCCESS");
-
 } catch (err) {
-  console.error("🔥 Firebase INIT ERROR:", err);
+  console.error("Firebase error");
 }
 
 /* =========================
-🔐 RAZORPAY SETUP
+🔐 RAZORPAY
 ========================= */
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
@@ -37,259 +35,133 @@ const razorpay = new Razorpay({
 });
 
 /* =========================
-📦 PACKAGE CONFIG (UPDATED)
+📦 PACKAGE CONFIG (FAST)
 ========================= */
 const packageConfig = {
-  "Shopify / WooCommerce Store Setup": { price: 4999, type: "one-time", sac: "998314" },
-  "Product Listing (50 Products)": { price: 2499, type: "one-time", sac: "998314" },
-  "Social Media Shop Setup (FB/IG)": { price: 1999, type: "one-time", sac: "998361" },
-  "E-commerce Marketing (Ads)": { price: 5999, type: "monthly", sac: "998361" },
-  "Branding & Logo Design": { price: 2999, type: "one-time", sac: "998361" },
-  "Dropshipping Setup": { price: 9999, type: "one-time", sac: "998314" },
-  "CRM & Order Management System": { price: 4999, type: "one-time", sac: "998314" },
-
-  "Digital Shop (Entry Pack)": { price: 2999, type: "one-time", sac: "998361" },
-  "E-commerce Starter Pack": { price: 6999, type: "one-time", sac: "998314" },
-  "E-commerce Growth Pack": { price: 14999, type: "one-time", sac: "998314" },
-
-  "Sales Booster": { price: 7999, type: "monthly", sac: "998361" },
-
-  "Google Visibility Pack": { price: 99, type: "one-time", sac: "998361" },
-  "Lead Generation System Pack": { price: 999, type: "one-time", sac: "998312" },
-  "Super Entry Pack": { price: 2999, type: "one-time", sac: "998361" },
-  "Ultra Low Entry Pack": { price: 4999, type: "one-time", sac: "998361" },
-
-  "Visibility Need Package": { price: 19999, type: "monthly", sac: "998361" },
-  "Lead Need Package": { price: 34999, type: "monthly", sac: "998312" },
-  "Sales Need Package": { price: 69999, type: "monthly", sac: "998361" },
-  "Brand Need Package": { price: 109999, type: "monthly", sac: "998361" },
+  "Shopify / WooCommerce Store Setup": [4999, "one-time", "998314"],
+  "Product Listing (50 Products)": [2499, "one-time", "998314"],
+  "Social Media Shop Setup (FB/IG)": [1999, "one-time", "998361"],
+  "E-commerce Marketing (Ads)": [5999, "monthly", "998361"],
+  "Branding & Logo Design": [2999, "one-time", "998361"],
+  "Dropshipping Setup": [9999, "one-time", "998314"],
+  "CRM & Order Management System": [4999, "one-time", "998314"],
+  "Digital Shop (Entry Pack)": [2999, "one-time", "998361"],
+  "E-commerce Starter Pack": [6999, "one-time", "998314"],
+  "E-commerce Growth Pack": [14999, "one-time", "998314"],
+  "Sales Booster": [7999, "monthly", "998361"],
+  "Google Visibility Pack": [99, "one-time", "998361"],
+  "Lead Generation System Pack": [999, "one-time", "998312"],
+  "Super Entry Pack": [2999, "one-time", "998361"],
+  "Ultra Low Entry Pack": [4999, "one-time", "998361"],
+  "Visibility Need Package": [19999, "monthly", "998361"],
+  "Lead Need Package": [34999, "monthly", "998312"],
+  "Sales Need Package": [69999, "monthly", "998361"],
+  "Brand Need Package": [109999, "monthly", "998361"],
 };
 
 /* =========================
-🧮 GST FUNCTION
+⚡ FAST GST
 ========================= */
-function calculateGST(price, state) {
-  const gstRate = 0.18;
-  const gstAmount = price * gstRate;
+function calcGST(price, isBihar) {
+  const gst = price * 0.18;
 
-  if (state === "Bihar") {
-    return {
-      cgst: gstAmount / 2,
-      sgst: gstAmount / 2,
-      igst: 0,
-      total: price + gstAmount,
-      type: "CGST+SGST",
-    };
+  if (isBihar) {
+    return [gst / 2, gst / 2, 0, price + gst, "CGST+SGST"];
   } else {
-    return {
-      cgst: 0,
-      sgst: 0,
-      igst: gstAmount,
-      total: price + gstAmount,
-      type: "IGST",
-    };
+    return [0, 0, gst, price + gst, "IGST"];
   }
 }
 
 /* =========================
-🧮 DATE HELPERS
-========================= */
-function addDays(date, days) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function addMonths(date, months) {
-  const result = new Date(date);
-  result.setMonth(result.getMonth() + months);
-  return result;
-}
-
-/* =========================
-✅ TEST ROUTE
-========================= */
-app.get("/", (req, res) => {
-  res.send("Backend running ✅");
-});
-
-/* =========================
-🧾 CREATE ORDER (UPDATED)
+🧾 CREATE ORDER (FAST)
 ========================= */
 app.post("/create-order", async (req, res) => {
   try {
     const { packageName, state } = req.body;
 
-    const config = packageConfig[packageName];
-    if (!config) {
-      return res.status(400).json({ error: "Invalid package" });
-    }
+    const data = packageConfig[packageName];
+    if (!data) return res.status(400).json({ error: "Invalid package" });
 
-    const gstData = calculateGST(config.price, state);
+    const [price, , sac] = data;
+    const [cgst, sgst, igst, total, type] = calcGST(price, state === "Bihar");
 
     const order = await razorpay.orders.create({
-      amount: Math.round(gstData.total * 100),
+      amount: Math.round(total * 100),
       currency: "INR",
-      receipt: "receipt_" + Date.now(),
-      notes: {
-        package: packageName,
-        sac: config.sac,
-        gst_type: gstData.type,
-        gstin: "10AAPCR4262H1ZF",
-      },
+      receipt: "r_" + Date.now(),
+      notes: { sac, type },
     });
 
     res.json({
-      order,
-      breakdown: {
-        basePrice: config.price,
-        gst: gstData,
-        total: gstData.total,
-      },
+      id: order.id,
+      amount: total,
+      gst: total - price,
     });
 
-  } catch (err) {
-    console.error("❌ Order Error:", err);
+  } catch {
     res.status(500).json({ error: "Order failed" });
   }
 });
 
 /* =========================
-✅ VERIFY PAYMENT
+✅ VERIFY PAYMENT (FAST)
 ========================= */
 app.post("/verify-payment", async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ success: false, message: "DB error" });
-    }
-
     const {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
       userId,
-      name,
-      email,
-      contact,
       packageName,
       state,
     } = req.body;
 
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-
-    const expectedSignature = crypto
+    const sign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(body)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
       .digest("hex");
 
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ success: false, message: "Invalid signature" });
+    if (sign !== razorpay_signature) {
+      return res.status(400).json({ success: false });
     }
 
-    const config = packageConfig[packageName];
-    const gstData = calculateGST(config.price, state);
+    const data = packageConfig[packageName];
+    const [price, type, sac] = data;
+    const [cgst, sgst, igst, total] = calcGST(price, state === "Bihar");
 
-    const purchaseDate = new Date();
-    let expiryDate = null;
-    let renewalDate = null;
-
-    if (config.type === "one-time") {
-      expiryDate = addDays(purchaseDate, 7);
-    } else {
-      renewalDate = addMonths(purchaseDate, 1);
-    }
-
-    await db.collection("payments").doc(razorpay_payment_id).set({
-      userId,
-      name,
-      email,
-      contact,
-      paymentId: razorpay_payment_id,
-      orderId: razorpay_order_id,
-      package: packageName,
-
-      baseAmount: config.price,
-      gstAmount: gstData.cgst + gstData.sgst + gstData.igst,
-      gstType: gstData.type,
-      cgst: gstData.cgst,
-      sgst: gstData.sgst,
-      igst: gstData.igst,
-      totalAmount: gstData.total,
-
-      sacCode: config.sac,
-      gstin: "10AAPCR4262H1ZF",
-
-      status: "success",
-      purchaseDate,
-      expiryDate,
-      renewalDate,
-      packageType: config.type,
-    });
-
-    await db.collection("users").doc(userId).set({
-      package: packageName,
-      status: "active",
-      purchaseDate,
-      expiryDate,
-      renewalDate,
-      packageType: config.type,
-      paymentId: razorpay_payment_id,
-    }, { merge: true });
-
-    return res.json({
-      success: true,
-      message: "Payment verified & GST stored",
-    });
-
-  } catch (err) {
-    console.error("🔥 Verification Error:", err);
-    res.status(500).json({ success: false, error: "Verification failed" });
-  }
-});
-
-/* =========================
-📊 GET USER PACKAGE STATUS
-========================= */
-app.get("/my-package/:userId", async (req, res) => {
-  try {
-    const userDoc = await db.collection("users").doc(req.params.userId).get();
-
-    if (!userDoc.exists) {
-      return res.json({ package: null });
-    }
-
-    const data = userDoc.data();
     const now = new Date();
 
-    let remainingDays = 0;
-    let status = "active";
+    const paymentData = {
+      userId,
+      paymentId: razorpay_payment_id,
+      package: packageName,
+      base: price,
+      gst: cgst + sgst + igst,
+      total,
+      sac,
+      gstin: "10AAPCR4262H1ZF",
+      createdAt: now,
+    };
 
-    if (data.packageType === "one-time" && data.expiryDate) {
-      remainingDays = Math.ceil((data.expiryDate.toDate() - now) / (1000 * 60 * 60 * 24));
-      if (remainingDays <= 0) status = "expired";
-    }
+    // ⚡ Parallel write (FAST)
+    await Promise.all([
+      db.collection("payments").doc(razorpay_payment_id).set(paymentData),
+      db.collection("users").doc(userId).set({
+        package: packageName,
+        status: "active",
+        updatedAt: now,
+      }, { merge: true })
+    ]);
 
-    if (data.packageType === "monthly" && data.renewalDate) {
-      remainingDays = Math.ceil((data.renewalDate.toDate() - now) / (1000 * 60 * 60 * 24));
-      if (remainingDays <= 0) status = "expired";
-    }
+    res.json({ success: true });
 
-    res.json({
-      ...data,
-      remainingDays,
-      status,
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: "Failed" });
+  } catch {
+    res.status(500).json({ success: false });
   }
 });
 
 /* =========================
-🚀 START SERVER
+🚀 START
 ========================= */
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(5000);
