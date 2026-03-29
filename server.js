@@ -13,7 +13,6 @@ let db;
 try {
   const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
-  // ✅ FIX PRIVATE KEY
   serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
 
   admin.initializeApp({
@@ -34,20 +33,34 @@ const razorpay = new Razorpay({
 
 /* ========================= 📦 PACKAGE CONFIG ========================= */
 const packageConfig = {
-  "Starter Pack": { type: "one-time", days: 3 },
-  "Super Entry Pack": { type: "one-time", days: 5 },
-  "Ultra Low Entry Pack": { type: "one-time", days: 7 },
-  "Growth Pack": { type: "monthly" },
-  "Pro Pack": { type: "monthly" },
-
-  // ✅ NEW SERVICES ADDED (NO OTHER CHANGES)
+  // 🔥 NEW UPDATED SERVICES
 
   "Google Visibility Pack": { type: "one-time", days: 3 },
+  "Lead Generation System Pack (Best Seller)": { type: "one-time", days: 3 },
 
-  "Lead Generation System Pack (Best Seller)": {
-    type: "one-time",
-    days: 3,
-  },
+  "Super Entry Pack": { type: "one-time", days: 5 },
+  "Ultra Low Entry Pack": { type: "one-time", days: 7 },
+
+  "Visibility Need Package": { type: "one-time", days: 30 },
+  "Lead Need Package": { type: "one-time", days: 30 },
+  "Sales Need Package": { type: "one-time", days: 30 },
+  "Brand Need Package": { type: "one-time", days: 30 },
+
+  // 🛒 E-commerce
+  "Digital Shop (Entry Pack)": { type: "one-time", days: 5 },
+  "E-commerce Starter Pack": { type: "one-time", days: 7 },
+  "E-commerce Growth Pack": { type: "one-time", days: 10 },
+
+  "Sales Booster (Monthly)": { type: "monthly" },
+
+  // 🔧 Additional Services
+  "Shopify / WooCommerce Store Setup": { type: "one-time", days: 7 },
+  "Product Listing (50 Products)": { type: "one-time", days: 5 },
+  "Social Media Shop Setup (FB/IG)": { type: "one-time", days: 3 },
+  "E-commerce Marketing (Ads)": { type: "one-time", days: 7 },
+  "Branding & Logo Design": { type: "one-time", days: 5 },
+  "Dropshipping Setup": { type: "one-time", days: 10 },
+  "CRM & Order Management System": { type: "one-time", days: 10 },
 };
 
 /* ========================= 🧮 DATE HELPERS ========================= */
@@ -109,7 +122,6 @@ app.post("/verify-payment", async (req, res) => {
       amount,
     } = req.body;
 
-    /* ========================= 🔐 SIGNATURE VERIFY ========================= */
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 
     const expectedSignature = crypto
@@ -126,7 +138,6 @@ app.post("/verify-payment", async (req, res) => {
 
     console.log("✅ Payment Verified");
 
-    /* ========================= 📦 PACKAGE LOGIC ========================= */
     const config = packageConfig[packageName];
 
     if (!config) {
@@ -146,7 +157,6 @@ app.post("/verify-payment", async (req, res) => {
       renewalDate = addMonths(purchaseDate, 1);
     }
 
-    /* ========================= 🔥 SAVE PAYMENT (NO DUPLICATE) ========================= */
     await db.collection("payments").doc(razorpay_payment_id).set({
       userId,
       name,
@@ -163,7 +173,6 @@ app.post("/verify-payment", async (req, res) => {
       packageType: config.type,
     });
 
-    /* ========================= 🔥 UPDATE USER ========================= */
     await db.collection("users").doc(userId).set(
       {
         package: packageName,
