@@ -35,32 +35,63 @@ const razorpay = new Razorpay({
 });
 
 /* =========================
-📦 PACKAGE CONFIG (FAST)
+📦 PACKAGE CONFIG (FINAL)
 ========================= */
 const packageConfig = {
-  "Shopify / WooCommerce Store Setup": [4999, "one-time", "998314"],
-  "Product Listing (50 Products)": [2499, "one-time", "998314"],
-  "Social Media Shop Setup (FB/IG)": [1999, "one-time", "998361"],
-  "E-commerce Marketing (Ads)": [5999, "monthly", "998361"],
-  "Branding & Logo Design": [2999, "one-time", "998361"],
-  "Dropshipping Setup": [9999, "one-time", "998314"],
-  "CRM & Order Management System": [4999, "one-time", "998314"],
-  "Digital Shop (Entry Pack)": [2999, "one-time", "998361"],
-  "E-commerce Starter Pack": [6999, "one-time", "998314"],
-  "E-commerce Growth Pack": [14999, "one-time", "998314"],
-  "Sales Booster": [7999, "monthly", "998361"],
-  "Google Visibility Pack": [99, "one-time", "998361"],
-  "Lead Generation System Pack": [999, "one-time", "998312"],
-  "Super Entry Pack": [2999, "one-time", "998361"],
-  "Ultra Low Entry Pack": [4999, "one-time", "998361"],
-  "Visibility Need Package": [19999, "monthly", "998361"],
-  "Lead Need Package": [34999, "monthly", "998312"],
-  "Sales Need Package": [69999, "monthly", "998361"],
-  "Brand Need Package": [109999, "monthly", "998361"],
+  digital_shop: [2999, "one-time", "998361"],
+  ecommerce_starter: [6999, "one-time", "998314"],
+  ecommerce_growth: [14999, "one-time", "998314"],
+  sales_booster: [7999, "monthly", "998361"],
+
+  google_visibility: [99, "one-time", "998361"],
+  lead_generation: [999, "one-time", "998312"],
+  super_entry: [2999, "one-time", "998361"],
+  ultra_low: [4999, "one-time", "998361"],
+
+  visibility_need: [19999, "monthly", "998361"],
+  lead_need: [34999, "monthly", "998312"],
+  sales_need: [69999, "monthly", "998361"],
+  brand_need: [109999, "monthly", "998361"],
+
+  store_setup: [4999, "one-time", "998314"],
+  product_listing: [2499, "one-time", "998314"],
+  social_shop: [1999, "one-time", "998361"],
+  ecommerce_ads: [5999, "monthly", "998361"],
+  branding_logo: [2999, "one-time", "998361"],
+  dropshipping: [9999, "one-time", "998314"],
+  crm_system: [4999, "one-time", "998314"],
 };
 
 /* =========================
-⚡ FAST GST
+🧾 PACKAGE NAME MAP
+========================= */
+const packageNames = {
+  digital_shop: "Digital Shop (Entry Pack)",
+  ecommerce_starter: "E-commerce Starter Pack",
+  ecommerce_growth: "E-commerce Growth Pack",
+  sales_booster: "Sales Booster",
+
+  google_visibility: "Google Visibility Pack",
+  lead_generation: "Lead Generation System Pack",
+  super_entry: "Super Entry Pack",
+  ultra_low: "Ultra Low Entry Pack",
+
+  visibility_need: "Visibility Need Package",
+  lead_need: "Lead Need Package",
+  sales_need: "Sales Need Package",
+  brand_need: "Brand Need Package",
+
+  store_setup: "Shopify Store Setup",
+  product_listing: "Product Listing",
+  social_shop: "Social Media Shop Setup",
+  ecommerce_ads: "E-commerce Marketing",
+  branding_logo: "Branding & Logo Design",
+  dropshipping: "Dropshipping Setup",
+  crm_system: "CRM System",
+};
+
+/* =========================
+⚡ GST CALCULATION
 ========================= */
 function calcGST(price, isBihar) {
   const gst = price * 0.18;
@@ -73,14 +104,23 @@ function calcGST(price, isBihar) {
 }
 
 /* =========================
-🧾 CREATE ORDER (FAST)
+✅ TEST
+========================= */
+app.get("/", (req, res) => {
+  res.send("Backend running 🚀");
+});
+
+/* =========================
+🧾 CREATE ORDER
 ========================= */
 app.post("/create-order", async (req, res) => {
   try {
-    const { packageName, state } = req.body;
+    const { packageId, state } = req.body;
 
-    const data = packageConfig[packageName];
-    if (!data) return res.status(400).json({ error: "Invalid package" });
+    const data = packageConfig[packageId];
+    if (!data) {
+      return res.status(400).json({ error: "Invalid package" });
+    }
 
     const [price, , sac] = data;
     const [cgst, sgst, igst, total, type] = calcGST(price, state === "Bihar");
@@ -89,22 +129,28 @@ app.post("/create-order", async (req, res) => {
       amount: Math.round(total * 100),
       currency: "INR",
       receipt: "r_" + Date.now(),
-      notes: { sac, type },
+      notes: {
+        packageId,
+        sac,
+        gst_type: type,
+        gstin: "10AAPCR4262H1ZF",
+      },
     });
 
     res.json({
-      id: order.id,
+      orderId: order.id,
       amount: total,
       gst: total - price,
+      name: packageNames[packageId],
     });
 
-  } catch {
+  } catch (err) {
     res.status(500).json({ error: "Order failed" });
   }
 });
 
 /* =========================
-✅ VERIFY PAYMENT (FAST)
+✅ VERIFY PAYMENT
 ========================= */
 app.post("/verify-payment", async (req, res) => {
   try {
@@ -113,8 +159,11 @@ app.post("/verify-payment", async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
       userId,
-      packageName,
+      packageId,
       state,
+      name,
+      email,
+      contact,
     } = req.body;
 
     const sign = crypto
@@ -126,42 +175,62 @@ app.post("/verify-payment", async (req, res) => {
       return res.status(400).json({ success: false });
     }
 
-    const data = packageConfig[packageName];
+    const data = packageConfig[packageId];
+    if (!data) return res.status(400).json({ success: false });
+
     const [price, type, sac] = data;
-    const [cgst, sgst, igst, total] = calcGST(price, state === "Bihar");
+    const [cgst, sgst, igst, total, gstType] = calcGST(price, state === "Bihar");
 
     const now = new Date();
 
     const paymentData = {
       userId,
+      name,
+      email,
+      contact,
       paymentId: razorpay_payment_id,
-      package: packageName,
-      base: price,
-      gst: cgst + sgst + igst,
-      total,
-      sac,
+      orderId: razorpay_order_id,
+      packageId,
+      packageName: packageNames[packageId],
+
+      baseAmount: price,
+      gstAmount: cgst + sgst + igst,
+      cgst,
+      sgst,
+      igst,
+      totalAmount: total,
+      gstType,
+
+      sacCode: sac,
       gstin: "10AAPCR4262H1ZF",
+
+      status: "success",
       createdAt: now,
+      packageType: type,
     };
 
-    // ⚡ Parallel write (FAST)
     await Promise.all([
       db.collection("payments").doc(razorpay_payment_id).set(paymentData),
       db.collection("users").doc(userId).set({
-        package: packageName,
+        packageId,
+        packageName: packageNames[packageId],
         status: "active",
         updatedAt: now,
-      }, { merge: true })
+      }, { merge: true }),
     ]);
 
     res.json({ success: true });
 
-  } catch {
+  } catch (err) {
     res.status(500).json({ success: false });
   }
 });
 
 /* =========================
-🚀 START
+🚀 START SERVER
 ========================= */
-app.listen(5000);
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port " + PORT);
+});
