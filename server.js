@@ -1,22 +1,16 @@
 const express = require("express");
+const Razorpay = require("razorpay");
 const cors = require("cors");
 const crypto = require("crypto");
 const admin = require("firebase-admin");
 
 const app = express();
-
-/* ========================= 🔐 MIDDLEWARE ========================= */
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json());
 
 /* ========================= 🔥 FIREBASE SETUP ========================= */
 let db;
-
 try {
-  if (!process.env.FIREBASE_KEY) {
-    throw new Error("FIREBASE_KEY missing");
-  }
-
   const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
   serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
@@ -30,6 +24,12 @@ try {
 } catch (err) {
   console.error("🔥 Firebase INIT ERROR:", err);
 }
+
+/* ========================= 🔐 RAZORPAY SETUP ========================= */
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
+});
 
 /* ========================= 📦 PACKAGE CONFIG ========================= */
 const packageConfig = {
@@ -60,24 +60,46 @@ const packageConfig = {
 };
 
 /* ========================= 🧮 DATE HELPERS ========================= */
-const addDays = (date, days) => {
+function addDays(date, days) {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
-};
+}
 
-const addMonths = (date, months) => {
+function addMonths(date, months) {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);
   return result;
-};
+}
 
-/* ========================= ✅ HEALTH ========================= */
-app.get("/api/health", (req, res) => {
-  res.json({ status: "OK ✅" });
+/* ========================= ✅ TEST ROUTE ========================= */
+app.get("/", (req, res) => {
+  res.send("Backend running ✅");
 });
 
-/* ========================= ✅ VERIFY PAYMENT ONLY ========================= */
+/* ========================= 🧾 CREATE ORDER ========================= */
+app.post("/api/create-order", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: "Amount required" });
+    }
+
+    const order = await razorpay.orders.create({
+      amount: amount * 100,
+      currency: "INR",
+      receipt: "receipt_" + Date.now(),
+    });
+
+    res.json(order);
+  } catch (err) {
+    console.error("❌ Order Error:", err);
+    res.status(500).json({ error: "Order failed" });
+  }
+});
+
+/* ========================= ✅ VERIFY PAYMENT ========================= */
 app.post("/api/verify-payment", async (req, res) => {
   try {
     if (!db) {
@@ -96,7 +118,6 @@ app.post("/api/verify-payment", async (req, res) => {
       amount,
     } = req.body;
 
-    /* 🔐 SIGNATURE VERIFY */
     const body = razorpay_order_id + "|" + razorpay_payment_id;
 
     const expectedSignature = crypto
@@ -113,7 +134,6 @@ app.post("/api/verify-payment", async (req, res) => {
 
     console.log("✅ Payment Verified");
 
-    /* 📦 PACKAGE LOGIC */
     const config = packageConfig[packageName];
 
     if (!config) {
@@ -133,7 +153,6 @@ app.post("/api/verify-payment", async (req, res) => {
       renewalDate = addMonths(purchaseDate, 1);
     }
 
-    /* 💾 SAVE PAYMENT */
     await db.collection("payments").doc(razorpay_payment_id).set({
       userId,
       name,
@@ -150,7 +169,6 @@ app.post("/api/verify-payment", async (req, res) => {
       packageType: config.type,
     });
 
-    /* 👤 UPDATE USER */
     await db.collection("users").doc(userId).set(
       {
         package: packageName,
@@ -177,13 +195,9 @@ app.post("/api/verify-payment", async (req, res) => {
   }
 });
 
-/* ========================= 📊 USER PACKAGE ========================= */
+/* ========================= 📊 GET USER PACKAGE STATUS ========================= */
 app.get("/api/my-package/:userId", async (req, res) => {
   try {
-    if (!db) {
-      return res.status(500).json({ error: "DB not connected" });
-    }
-
     const userDoc = await db.collection("users").doc(req.params.userId).get();
 
     if (!userDoc.exists) {
@@ -218,12 +232,11 @@ app.get("/api/my-package/:userId", async (req, res) => {
       status,
     });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed" });
   }
 });
 
-/* ========================= 🚀 START ========================= */
+/* ========================= 🚀 START SERVER ========================= */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
