@@ -5,12 +5,19 @@ const crypto = require("crypto");
 const admin = require("firebase-admin");
 
 const app = express();
-app.use(cors());
+
+/* ========================= 🔐 MIDDLEWARE ========================= */
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 /* ========================= 🔥 FIREBASE SETUP ========================= */
 let db;
+
 try {
+  if (!process.env.FIREBASE_KEY) {
+    throw new Error("FIREBASE_KEY missing");
+  }
+
   const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
 
   serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
@@ -26,6 +33,10 @@ try {
 }
 
 /* ========================= 🔐 RAZORPAY SETUP ========================= */
+if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+  console.error("❌ Razorpay keys missing");
+}
+
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET,
@@ -33,8 +44,6 @@ const razorpay = new Razorpay({
 
 /* ========================= 📦 PACKAGE CONFIG ========================= */
 const packageConfig = {
-  // 🔥 NEW UPDATED SERVICES
-
   "Google Visibility Pack": { type: "one-time", days: 3 },
   "Lead Generation System Pack (Best Seller)": { type: "one-time", days: 3 },
 
@@ -46,14 +55,12 @@ const packageConfig = {
   "Sales Need Package": { type: "one-time", days: 30 },
   "Brand Need Package": { type: "one-time", days: 30 },
 
-  // 🛒 E-commerce
   "Digital Shop (Entry Pack)": { type: "one-time", days: 5 },
   "E-commerce Starter Pack": { type: "one-time", days: 7 },
   "E-commerce Growth Pack": { type: "one-time", days: 10 },
 
   "Sales Booster (Monthly)": { type: "monthly" },
 
-  // 🔧 Additional Services
   "Shopify / WooCommerce Store Setup": { type: "one-time", days: 7 },
   "Product Listing (50 Products)": { type: "one-time", days: 5 },
   "Social Media Shop Setup (FB/IG)": { type: "one-time", days: 3 },
@@ -64,25 +71,25 @@ const packageConfig = {
 };
 
 /* ========================= 🧮 DATE HELPERS ========================= */
-function addDays(date, days) {
+const addDays = (date, days) => {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
-}
+};
 
-function addMonths(date, months) {
+const addMonths = (date, months) => {
   const result = new Date(date);
   result.setMonth(result.getMonth() + months);
   return result;
-}
+};
 
-/* ========================= ✅ TEST ROUTE ========================= */
-app.get("/", (req, res) => {
-  res.send("Backend running ✅");
+/* ========================= ✅ HEALTH CHECK ========================= */
+app.get("/api/health", (req, res) => {
+  res.json({ status: "OK ✅" });
 });
 
 /* ========================= 🧾 CREATE ORDER ========================= */
-app.post("/create-order", async (req, res) => {
+app.post("/api/create-order", async (req, res) => {
   try {
     const { amount } = req.body;
 
@@ -103,8 +110,8 @@ app.post("/create-order", async (req, res) => {
   }
 });
 
-/* ========================= ✅ VERIFY PAYMENT + PACKAGE LOGIC ========================= */
-app.post("/verify-payment", async (req, res) => {
+/* ========================= ✅ VERIFY PAYMENT ========================= */
+app.post("/api/verify-payment", async (req, res) => {
   try {
     if (!db) {
       return res.status(500).json({ success: false, message: "DB error" });
@@ -199,9 +206,13 @@ app.post("/verify-payment", async (req, res) => {
   }
 });
 
-/* ========================= 📊 GET USER PACKAGE STATUS ========================= */
-app.get("/my-package/:userId", async (req, res) => {
+/* ========================= 📊 USER PACKAGE STATUS ========================= */
+app.get("/api/my-package/:userId", async (req, res) => {
   try {
+    if (!db) {
+      return res.status(500).json({ error: "DB not connected" });
+    }
+
     const userDoc = await db.collection("users").doc(req.params.userId).get();
 
     if (!userDoc.exists) {
@@ -236,6 +247,7 @@ app.get("/my-package/:userId", async (req, res) => {
       status,
     });
   } catch (err) {
+    console.error("❌ Fetch Error:", err);
     res.status(500).json({ error: "Failed" });
   }
 });
